@@ -1,4 +1,9 @@
+#ifdef __APPLE__
+#include <GLUT/glut.h>
+#else
 #include <GL/glut.h>
+#endif
+#define GL_SILENCE_DEPRECATION
 
 void setupLighting() {
     GLfloat ambientLight[] = { 0.3f, 0.3f, 0.3f, 1.0f };
