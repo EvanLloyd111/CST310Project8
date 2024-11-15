@@ -5,8 +5,6 @@
 #include <SOIL/SOIL.h>  // Include for texture loading
 #include <iostream>
 
-
-
 float arrowPosition = -1.5f; // Starting position of the arrow
 float arrowSpeed = 0.02f;    // Speed of the arrow's movement
 bool arrowMoving = true;     // Flag to control arrow movement
@@ -19,24 +17,40 @@ float barSpeed = 0.02f; // Initial speed for the red bar's movement
 
 bool ballLaunched = false;      // Tracks if the ball has been launched
 glm::vec3 ballVelocity(0.0f);   // Velocity vector for the ball
-float launchSpeed = 7.0f;        // Maximum speed for the ball launch
+float launchSpeed = 10.0f;        // Maximum speed for the ball launch
 glm::vec3 ballPosition(0.0f, 0.2f, -2.0f); // Initial position of the ball
 
 // Goal boundaries (adjust if necessary)
-const float goalMinX = -1.5f; // Left side of the goal
-const float goalMaxX = 1.5f;  // Right side of the goal
-const float goalZ = -10.0f;   // Depth of the goal
+const float goalMinX = -1.0f; // Left side of the goal
+const float goalMaxX = 1.0f;  // Right side of the goal
+const float goalZ = -10.5f;   // Depth of the goal
+
+// Add a global variable to track the score
+int playerScore = 0;
 
 float goalieX = 0.0f;
-float goalieSpeed = 0.05f;
+float goalieSpeed = 0.02f;
 bool movingRight = true;
+
+const glm::vec3 goalieSize(0.5f, 1.0f, 0.2f); // Approximate size of the goalie
+const glm::vec3 goalPostSize(0.1f, 1.5f, 0.1f); // Approximate size of a goal post
+
+
+bool checkCollision(glm::vec3 pos1, glm::vec3 size1, glm::vec3 pos2, glm::vec3 size2) {
+    return (abs(pos1.x - pos2.x) < (size1.x + size2.x) / 2.0f) &&
+           (abs(pos1.y - pos2.y) < (size1.y + size2.y) / 2.0f) &&
+           (abs(pos1.z - pos2.z) < (size1.z + size2.z) / 2.0f);
+}
 
 bool checkGoal() {
     // Check if the ball is within the x boundaries of the goal
     if (ballPosition.x > goalMinX && ballPosition.x < goalMaxX) {
         // Check if the ball has passed the goal on the z-axis
         if (ballPosition.z < goalZ) {
-            return true;
+            // Check if the ball's height is below the top of the goal
+            if (ballPosition.y <= 1.5f) { // Assuming 1.5f is the height of the top post
+                return true;
+            }
         }
     }
     return false;
@@ -57,10 +71,10 @@ void setupLighting() {
 }
 
 GLuint grassTexture;
-
+GLuint ballTexture; // Texture ID for the soccer ball
 
 void loadTexture() {
-    // Load texture from file
+    // Load grass texture
     grassTexture = SOIL_load_OGL_texture(
         "grass_texture.png",   // Path to your grass texture file
         SOIL_LOAD_AUTO,        // Automatically detect format
@@ -69,16 +83,47 @@ void loadTexture() {
     );
 
     if (grassTexture == 0) {
-        std::cerr << "Error loading texture: " << SOIL_last_result() << std::endl;
-        return;
+        std::cerr << "Error loading grass texture: " << SOIL_last_result() << std::endl;
     }
 
-    // Set texture parameters
-    glBindTexture(GL_TEXTURE_2D, grassTexture);
+    // Load ball texture
+    ballTexture = SOIL_load_OGL_texture(
+        "ball_texture.png",    // Path to your ball texture file
+        SOIL_LOAD_AUTO,        // Automatically detect format
+        SOIL_CREATE_NEW_ID,    // Create new texture ID
+        SOIL_FLAG_MIPMAPS | SOIL_FLAG_INVERT_Y  // Generate mipmaps and invert Y-axis for correct texture orientation
+    );
+
+    if (ballTexture == 0) {
+        std::cerr << "Error loading ball texture: " << SOIL_last_result() << std::endl;
+    }
+
+    // Set texture parameters for ball
+    glBindTexture(GL_TEXTURE_2D, ballTexture);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+}
+
+
+void drawScore() {
+    glDisable(GL_LIGHTING); // Disable lighting to render text
+
+    // Set text color to white
+    glColor3f(1.0f, 1.0f, 1.0f);
+
+    // Set position for the score text
+    glRasterPos3f(-0.5f, 2.0f, -5.0f); // Top center of the screen
+
+    std::string scoreText = "SCORE: " + std::to_string(playerScore);
+
+    // Render each character
+    for (char c : scoreText) {
+        glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, c);
+    }
+
+    glEnable(GL_LIGHTING); // Re-enable lighting
 }
 
 void drawField() {
@@ -99,11 +144,20 @@ void drawField() {
 
 
 void drawBall() {
-    glColor3f(1.0f, 1.0f, 1.0f); // White color for the ball
+    glEnable(GL_TEXTURE_2D); // Enable 2D texturing
+    glBindTexture(GL_TEXTURE_2D, ballTexture); // Bind the ball texture
+
+    glColor3f(1.0f, 1.0f, 1.0f); // Set color to white to avoid tinting the texture
+
     glPushMatrix();
     glTranslatef(ballPosition.x, ballPosition.y, ballPosition.z); // Use ballPosition for dynamic movement
-    glutSolidSphere(0.2f, 20, 20); // Small sphere for ball
+    GLUquadric* quad = gluNewQuadric(); // Create a quadric object
+    gluQuadricTexture(quad, GL_TRUE);  // Enable texture mapping for the quadric
+    gluSphere(quad, 0.2f, 20, 20);     // Render the textured sphere
+    gluDeleteQuadric(quad);            // Clean up the quadric object
     glPopMatrix();
+
+    glDisable(GL_TEXTURE_2D); // Disable 2D texturing
 }
 
 void drawGoalPosts() {
@@ -137,26 +191,26 @@ void drawGoalBox() {
 
     // Front line (rectangle)
     glBegin(GL_QUADS);
-    glVertex3f(-1.5f, 0.1f, -8.0f);            // Bottom left
-    glVertex3f(1.5f, 0.1f, -8.0f);             // Bottom right
-    glVertex3f(1.5f, 0.1f + thickness, -8.0f); // Top right
-    glVertex3f(-1.5f, 0.1f + thickness, -8.0f);// Top left
+    glVertex3f(-1.5f, 0.0f, -8.0f);            // Bottom left
+    glVertex3f(1.5f, 0.0f, -8.0f);             // Bottom right
+    glVertex3f(1.5f, 0.0f + thickness, -8.0f); // Top right
+    glVertex3f(-1.5f, 0.0f + thickness, -8.0f);// Top left
     glEnd();
 
     // Left line (rectangle)
     glBegin(GL_QUADS);
-    glVertex3f(-1.5f, 0.1f, -8.0f);              // Front bottom
-    glVertex3f(-1.5f, 0.1f, -10.0f);             // Back bottom
-    glVertex3f(-1.5f + thickness, 0.1f, -10.0f); // Back top
-    glVertex3f(-1.5f + thickness, 0.1f, -8.0f);  // Front top
+    glVertex3f(-1.5f, 0.0f, -8.0f);              // Front bottom
+    glVertex3f(-1.5f, 0.0f, -10.0f);             // Back bottom
+    glVertex3f(-1.5f + thickness, 0.0f, -10.0f); // Back top
+    glVertex3f(-1.5f + thickness, 0.0f, -8.0f);  // Front top
     glEnd();
 
     // Right line (rectangle)
     glBegin(GL_QUADS);
-    glVertex3f(1.5f, 0.1f, -8.0f);               // Front bottom
-    glVertex3f(1.5f, 0.1f, -10.0f);              // Back bottom
-    glVertex3f(1.5f - thickness, 0.1f, -10.0f);  // Back top
-    glVertex3f(1.5f - thickness, 0.1f, -8.0f);   // Front top
+    glVertex3f(1.5f, 0.0f, -8.0f);               // Front bottom
+    glVertex3f(1.5f, 0.0f, -10.0f);              // Back bottom
+    glVertex3f(1.5f - thickness, 0.0f, -10.0f);  // Back top
+    glVertex3f(1.5f - thickness, 0.0f, -8.0f);   // Front top
     glEnd();
 }
 
@@ -215,7 +269,7 @@ void launchBall() {
     if (normalizedBarPosition <= 0.75f) {
         ballVelocity.y = 1.0f * normalizedBarPosition; // Low height for scoring
     } else {
-        ballVelocity.y = 1.5f; // High height for missing the goal
+        ballVelocity.y = 2.0f; // High height for missing the goal
     }
 }
 
@@ -294,7 +348,7 @@ void updateGoalie(int value) {
 void update(int value) {
     if (!ballLaunched) {
         if (arrowMoving) {
-            // Arrow movement logic (no changes)
+            // Arrow movement logic
             arrowPosition += arrowSpeed;
             if (arrowPosition >= 0.5f) {
                 arrowPosition = 0.5f;
@@ -321,15 +375,48 @@ void update(int value) {
         }
     } else {
         // Ball movement logic after launch
-        ballPosition += ballVelocity * 0.016f; // Adjust 0.016 for a smooth frame-rate independent speed
+        ballPosition += ballVelocity * 0.016f; // Adjust 0.016 for smooth frame-rate independent speed
+
+        // Define damping factor for reducing speed after bounce
+        const float dampingFactor = 0.6f; // 60% of current speed retained after collision
+
+        // Check collision with goalie
+        if (checkCollision(ballPosition, glm::vec3(0.2f), glm::vec3(goalieX, 0.5f, -9.0f), goalieSize)) {
+            ballVelocity.x = -ballVelocity.x * dampingFactor; // Invert x-direction and apply damping
+            ballVelocity.y = -ballVelocity.y * dampingFactor; // Invert y-direction and apply damping
+            ballVelocity.z = -ballVelocity.z * dampingFactor; // Invert z-direction and apply damping
+        }
+
+        // Check collision with left goal post
+        if (checkCollision(ballPosition, glm::vec3(0.2f), glm::vec3(-1.0f, 0.75f, -10.0f), goalPostSize)) {
+            ballVelocity.x = -ballVelocity.x * dampingFactor; // Invert x-direction and apply damping
+            ballVelocity.y = -ballVelocity.y * dampingFactor; // Invert y-direction and apply damping
+            ballVelocity.z = -ballVelocity.z * dampingFactor; // Invert z-direction and apply damping
+        }
+
+        // Check collision with right goal post
+        if (checkCollision(ballPosition, glm::vec3(0.2f), glm::vec3(1.0f, 0.75f, -10.0f), goalPostSize)) {
+            ballVelocity.x = -ballVelocity.x * dampingFactor; // Invert x-direction and apply damping
+            ballVelocity.y = -ballVelocity.y * dampingFactor; // Invert y-direction and apply damping
+            ballVelocity.z = -ballVelocity.z * dampingFactor; // Invert z-direction and apply damping
+        }
 
         // Check if the ball has passed through the goal
         if (checkGoal()) {
-            // Increase speed by 25%
-            arrowSpeed *= 1.25f;
-            barSpeed *= 1.15f;
+            // Increment goal count
+            playerScore++;
+
+            // Increase speeds by 20%
+            arrowSpeed *= 1.1f;
+            barSpeed *= 1.05f;
+            goalieSpeed *= 1.1f;
 
             // Reset the scene
+            reset();
+        }
+        
+         // Reset if the ball reaches a certain depth
+        if (ballPosition.z < -15.0f || ballPosition.z > 3.0f) {
             reset();
         }
     }
@@ -337,8 +424,6 @@ void update(int value) {
     glutPostRedisplay();           // Request display update
     glutTimerFunc(16, update, 0);  // 60 FPS update rate
 }
-
-
 void handleMouse(int button, int state, int x, int y) {
     if (button == GLUT_LEFT_BUTTON && state == GLUT_DOWN) {
         if (!barActive) {
@@ -376,6 +461,7 @@ void display() {
     drawField();
     drawBall();
     drawGoalPosts();
+    drawScore(); // Draw the score at the top center of the screen
     
     glDisable(GL_LIGHTING); // Temporarily disable lighting for color consistency
     drawGoalBox();
@@ -405,6 +491,8 @@ int main(int argc, char** argv) {
 
     setupLighting();
     glEnable(GL_DEPTH_TEST);
+
+    loadTexture(); // Load textures at startup
 
     glutDisplayFunc(display);
     glutReshapeFunc(reshape);
